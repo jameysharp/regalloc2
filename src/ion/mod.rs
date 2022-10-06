@@ -136,7 +136,7 @@ pub fn run<F: Function>(
         edits: env
             .edits
             .into_iter()
-            .map(|(pos_prio, edit)| (pos_prio.pos, edit))
+            .map(|(pos_prio, edit)| (pos_prio.pos(), edit))
             .collect(),
         allocs: env.allocs,
         inst_alloc_offsets: env.inst_alloc_offsets,

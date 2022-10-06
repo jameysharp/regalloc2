@@ -62,10 +62,7 @@ impl<'a, F: Function> Env<'a, F> {
             debug_assert_eq!(to.class(), to_vreg.class());
         }
         self.inserted_moves.push(InsertedMove {
-            pos_prio: PosWithPrio {
-                pos,
-                prio: prio as u32,
-            },
+            pos_prio: PosWithPrio::new(pos, prio),
             from_alloc,
             to_alloc,
             to_vreg,
@@ -943,8 +940,8 @@ impl<'a, F: Function> Env<'a, F> {
             }
             let moves = &self.inserted_moves[start..i];
 
-            redundant_move_process_side_effects(self, &mut redundant_moves, last_pos, pos_prio.pos);
-            last_pos = pos_prio.pos;
+            redundant_move_process_side_effects(self, &mut redundant_moves, last_pos, pos_prio.pos());
+            last_pos = pos_prio.pos();
 
             // Gather all the moves with Int class and Float class
             // separately. These cannot interact, so it is safe to
@@ -976,11 +973,7 @@ impl<'a, F: Function> Env<'a, F> {
                 // parallel. Let's resolve these to a sequence of moves
                 // that can be done one at a time.
                 let mut parallel_moves = ParallelMoves::new();
-                trace!(
-                    "parallel moves at pos {:?} prio {:?}",
-                    pos_prio.pos,
-                    pos_prio.prio
-                );
+                trace!("parallel moves at {:?}", pos_prio);
                 for m in moves {
                     trace!(" {} -> {}", m.from_alloc, m.to_alloc);
                     parallel_moves.add(m.from_alloc, m.to_alloc, Some(m.to_vreg));
@@ -996,8 +989,8 @@ impl<'a, F: Function> Env<'a, F> {
                     None,
                 );
                 let key = LiveRangeKey::from_range(&CodeRange {
-                    from: pos_prio.pos,
-                    to: pos_prio.pos.next(),
+                    from: pos_prio.pos(),
+                    to: pos_prio.pos().next(),
                 });
                 let get_reg = || {
                     while let Some(preg) = scratch_iter.next() {
@@ -1092,7 +1085,7 @@ impl<'a, F: Function> Env<'a, F> {
                 let &(pos_prio, ref edit) = &self.edits[i];
                 match edit {
                     &Edit::Move { from, to } => {
-                        self.annotate(pos_prio.pos, format!("move {} -> {}", from, to));
+                        self.annotate(pos_prio.pos(), format!("move {} -> {}", from, to));
                     }
                 }
             }

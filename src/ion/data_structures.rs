@@ -620,18 +620,32 @@ pub enum InsertMovePrio {
     OutEdgeMoves,
 }
 
-/// The fields in this struct are reversed in sort order so that the entire
-/// struct can be treated as a u64 for sorting purposes.
+/// A pair of a [ProgPoint] and an [InsertMovePrio], for use as a sort key.
+/// [PosWithPrio::key] returns a `u64` that sorts by program point first, then
+/// by priority.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct PosWithPrio {
-    pub prio: u32,
-    pub pos: ProgPoint,
+    prio: u32,
+    pos: ProgPoint,
 }
 
 impl PosWithPrio {
+    #[inline]
+    pub fn new(pos: ProgPoint, prio: InsertMovePrio) -> PosWithPrio {
+        PosWithPrio {
+            pos,
+            prio: prio as u32,
+        }
+    }
+
     pub fn key(self) -> u64 {
         u64_key(self.pos.to_index(), self.prio)
+    }
+
+    #[inline]
+    pub fn pos(self) -> ProgPoint {
+        self.pos
     }
 }
 
