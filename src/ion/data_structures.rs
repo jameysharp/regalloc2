@@ -625,28 +625,22 @@ pub enum InsertMovePrio {
 /// by priority.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
-pub struct PosWithPrio {
-    prio: u32,
-    pos: ProgPoint,
-}
+pub struct PosWithPrio(u64);
 
 impl PosWithPrio {
     #[inline]
     pub fn new(pos: ProgPoint, prio: InsertMovePrio) -> PosWithPrio {
-        PosWithPrio {
-            pos,
-            prio: prio as u32,
-        }
+        PosWithPrio(u64::from(pos.to_index()) << 32 | prio as u64)
     }
 
     #[inline]
     pub fn key(self) -> u64 {
-        u64_key(self.pos.to_index(), self.prio)
+        self.0
     }
 
     #[inline]
     pub fn pos(self) -> ProgPoint {
-        self.pos
+        ProgPoint::from_index((self.0 >> 32) as u32)
     }
 }
 
