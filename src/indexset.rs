@@ -284,8 +284,7 @@ impl IndexSet {
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = usize> + 'a {
         self.elems.iter().flat_map(|(word_idx, bits)| {
-            let word_idx = word_idx as usize;
-            set_bits(bits).map(move |i| BITS_PER_WORD * word_idx + i)
+            SetBitsIter(bits).map(move |i| BITS_PER_WORD * word_idx as usize + i)
         })
     }
 
@@ -299,15 +298,11 @@ impl IndexSet {
     }
 }
 
-fn set_bits(bits: u64) -> impl Iterator<Item = usize> {
-    let iter = SetBitsIter(bits);
-    iter
-}
-
-pub struct SetBitsIter(u64);
+struct SetBitsIter(u64);
 
 impl Iterator for SetBitsIter {
     type Item = usize;
+    #[inline]
     fn next(&mut self) -> Option<usize> {
         // Build an `Option<NonZeroU64>` so that on the nonzero path,
         // the compiler can optimize the trailing-zeroes operator
