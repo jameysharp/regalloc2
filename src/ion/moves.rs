@@ -940,7 +940,12 @@ impl<'a, F: Function> Env<'a, F> {
             }
             let moves = &self.inserted_moves[start..i];
 
-            redundant_move_process_side_effects(self, &mut redundant_moves, last_pos, pos_prio.pos());
+            redundant_move_process_side_effects(
+                self,
+                &mut redundant_moves,
+                last_pos,
+                pos_prio.pos(),
+            );
             last_pos = pos_prio.pos();
 
             // Gather all the moves with Int class and Float class
