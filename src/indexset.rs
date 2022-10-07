@@ -63,11 +63,8 @@ impl AdaptiveMap {
                     }
                     *len = out as u32;
                 } else {
-                    let mut map = FxHashMap::default();
-                    for i in 0..(*len as usize) {
-                        map.insert(keys[i], values[i]);
-                    }
-                    *self = Self::Large(map);
+                    debug_assert_eq!(*len, SMALL_ELEMS as u32);
+                    *self = Self::Large(keys.iter().copied().zip(values.iter().copied()).collect());
                 }
             }
             _ => {}
@@ -308,6 +305,8 @@ pub struct SetBitsIter(u64);
 
 impl Iterator for SetBitsIter {
     type Item = usize;
+
+    #[inline]
     fn next(&mut self) -> Option<usize> {
         // Build an `Option<NonZeroU64>` so that on the nonzero path,
         // the compiler can optimize the trailing-zeroes operator
