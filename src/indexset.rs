@@ -179,17 +179,13 @@ impl<'a> std::iter::Iterator for AdaptiveMapIter<'a> {
     type Item = (u32, u64);
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            &mut Self::Small(ref mut keys, ref mut values) => {
-                if keys.is_empty() {
-                    None
-                } else {
-                    let (k, v) = ((*keys)[0], (*values)[0]);
-                    *keys = &(*keys)[1..];
-                    *values = &(*values)[1..];
-                    Some((k, v))
-                }
-            }
-            &mut Self::Large(ref mut it) => it.next().map(|(&k, &v)| (k, v)),
+            Self::Small(keys, values) => keys.split_first().map(|(&k, keys_rest)| {
+                let (&v, values_rest) = values.split_first().unwrap();
+                *keys = keys_rest;
+                *values = values_rest;
+                (k, v)
+            }),
+            Self::Large(it) => it.next().map(|(&k, &v)| (k, v)),
         }
     }
 }
