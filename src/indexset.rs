@@ -5,7 +5,7 @@
 
 //! Index sets: sets of integers that represent indices into a space.
 
-use fxhash::FxHashMap;
+use fxhash::{FxBuildHasher, FxHashMap};
 use std::cell::Cell;
 
 const SMALL_ELEMS: usize = 12;
@@ -158,6 +158,36 @@ impl AdaptiveMap {
             }
         }
     }
+
+    fn len(&self) -> usize {
+        match self {
+            &Self::Small { len, .. } => len as usize,
+            Self::Large(map) => map.len(),
+        }
+    }
+
+    /// Unlike e.g. HashMap::reserve, this ensures the total capacity
+    /// is at least what's specified, rather than reserving additional
+    /// capacity on top of the current length.
+    fn ensure_capacity(&mut self, capacity: usize) {
+        match self {
+            Self::Small { len, keys, values } => {
+                if capacity > SMALL_ELEMS {
+                    let hasher = FxBuildHasher::default();
+                    let mut map = FxHashMap::with_capacity_and_hasher(capacity, hasher);
+                    let len = *len as usize;
+                    map.extend(keys[..len].iter().copied().zip(values.iter().copied()));
+                    *self = Self::Large(map);
+                }
+            }
+            Self::Large(map) => {
+                if let Some(extra) = capacity.checked_sub(map.len()) {
+                    map.reserve(extra);
+                }
+            }
+        }
+    }
+
     fn iter<'a>(&'a self) -> AdaptiveMapIter<'a> {
         match self {
             &Self::Small {
@@ -267,6 +297,7 @@ impl IndexSet {
 
     pub fn union_with(&mut self, other: &Self) -> bool {
         let mut changed = 0;
+        self.elems.ensure_capacity(other.elems.len());
         for (word_idx, bits) in other.elems.iter() {
             if bits == 0 {
                 continue;
