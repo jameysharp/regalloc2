@@ -85,6 +85,11 @@ pub enum RegClass {
     Vector = 2,
 }
 
+impl RegClass {
+    pub const NUM_CLASSES: usize = 3;
+    pub const BITS: usize = RegClass::NUM_CLASSES.next_power_of_two().trailing_zeros() as usize;
+}
+
 /// A physical register. Contains a physical register number and a class.
 ///
 /// The `hw_enc` field contains the physical register number and is in
@@ -105,10 +110,12 @@ pub struct PReg {
     bits: u8,
 }
 
+type PRegClassSet = u64;
+
 impl PReg {
-    pub const MAX_BITS: usize = 6;
+    pub const MAX_BITS: usize = core::mem::size_of::<PRegClassSet>().trailing_zeros() as usize + 3;
     pub const MAX: usize = (1 << Self::MAX_BITS) - 1;
-    pub const NUM_INDEX: usize = 1 << (Self::MAX_BITS + 2); // including RegClass bits
+    pub const NUM_INDEX: usize = (Self::MAX + 1) * RegClass::NUM_CLASSES;
 
     /// Create a new PReg. The `hw_enc` range is 6 bits.
     #[inline(always)]
@@ -147,16 +154,15 @@ impl PReg {
     /// Construct a PReg from the value returned from `.index()`.
     #[inline(always)]
     pub const fn from_index(index: usize) -> Self {
-        PReg {
-            bits: (index & (Self::NUM_INDEX - 1)) as u8,
-        }
+        debug_assert!(index < Self::NUM_INDEX);
+        PReg { bits: index as u8 }
     }
 
     /// Return the "invalid PReg", which can be used to initialize
     /// data structures.
     #[inline(always)]
     pub const fn invalid() -> Self {
-        PReg::new(Self::MAX, RegClass::Int)
+        PReg { bits: !0 }
     }
 }
 
@@ -191,83 +197,79 @@ impl core::fmt::Display for PReg {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct PRegSet {
-    bits: [u128; 2],
+    bits: [PRegClassSet; RegClass::NUM_CLASSES],
 }
 
 impl PRegSet {
     /// Create an empty set.
     pub const fn empty() -> Self {
-        Self { bits: [0; 2] }
+        PRegSet {
+            bits: [0; RegClass::NUM_CLASSES],
+        }
     }
 
     /// Returns whether the given register is part of the set.
     pub fn contains(&self, reg: PReg) -> bool {
-        debug_assert!(reg.index() < 256);
-        let bit = reg.index() & 127;
-        let index = reg.index() >> 7;
-        self.bits[index] & (1u128 << bit) != 0
+        let bit = reg.hw_enc();
+        let index = reg.class() as usize;
+        self.bits[index] & (1 << bit) != 0
     }
 
     /// Add a physical register (PReg) to the set, returning the new value.
-    pub const fn with(self, reg: PReg) -> Self {
-        debug_assert!(reg.index() < 256);
-        let bit = reg.index() & 127;
-        let index = reg.index() >> 7;
-        let mut out = self;
-        out.bits[index] |= 1u128 << bit;
-        out
+    pub const fn with(mut self, reg: PReg) -> Self {
+        let bit = reg.hw_enc();
+        let index = reg.class() as usize;
+        self.bits[index] |= 1 << bit;
+        self
+    }
+
+    /// Add a range of physical registers, between `start` and `end`
+    /// inclusive, to the set, returning the new set. The `end` must not
+    /// be less than the `start`, and both registers must be in the same
+    /// register class.
+    pub const fn with_range(mut self, start: PReg, end: PReg) -> Self {
+        debug_assert!(end.index().wrapping_sub(start.index()) >> PReg::MAX_BITS == 0);
+        let start_mask = !0 << start.hw_enc();
+        let end_mask = !0 >> (PReg::MAX - end.hw_enc());
+        let index = start.class() as usize;
+        self.bits[index] |= start_mask & end_mask;
+        self
     }
 
     /// Add a physical register (PReg) to the set.
     pub fn add(&mut self, reg: PReg) {
-        debug_assert!(reg.index() < 256);
-        let bit = reg.index() & 127;
-        let index = reg.index() >> 7;
-        self.bits[index] |= 1u128 << bit;
+        let bit = reg.hw_enc();
+        let index = reg.class() as usize;
+        self.bits[index] |= 1 << bit;
     }
 
     /// Remove a physical register (PReg) from the set.
     pub fn remove(&mut self, reg: PReg) {
-        debug_assert!(reg.index() < 256);
-        let bit = reg.index() & 127;
-        let index = reg.index() >> 7;
-        self.bits[index] &= !(1u128 << bit);
+        let bit = reg.hw_enc();
+        let index = reg.class() as usize;
+        self.bits[index] &= !(1 << bit);
     }
 
     /// Add all of the registers in one set to this one, mutating in
     /// place.
     pub fn union_from(&mut self, other: PRegSet) {
-        self.bits[0] |= other.bits[0];
-        self.bits[1] |= other.bits[1];
+        for (this, other) in self.bits.iter_mut().zip(&other.bits) {
+            *this |= *other;
+        }
     }
 }
 
-impl IntoIterator for PRegSet {
-    type Item = PReg;
-    type IntoIter = PRegSetIter;
-    fn into_iter(self) -> PRegSetIter {
-        PRegSetIter { bits: self.bits }
-    }
-}
-
-pub struct PRegSetIter {
-    bits: [u128; 2],
-}
-
-impl Iterator for PRegSetIter {
+impl Iterator for PRegSet {
     type Item = PReg;
     fn next(&mut self) -> Option<PReg> {
-        if self.bits[0] != 0 {
-            let index = self.bits[0].trailing_zeros();
-            self.bits[0] &= !(1u128 << index);
-            Some(PReg::from_index(index as usize))
-        } else if self.bits[1] != 0 {
-            let index = self.bits[1].trailing_zeros();
-            self.bits[1] &= !(1u128 << index);
-            Some(PReg::from_index(index as usize + 128))
-        } else {
-            None
+        for (class, bits) in self.bits.iter_mut().enumerate() {
+            if *bits != 0 {
+                let index = bits.trailing_zeros() as usize;
+                *bits &= !(1 << index);
+                return Some(PReg::from_index((class << PReg::MAX_BITS) | index));
+            }
         }
+        None
     }
 }
 
@@ -314,13 +316,13 @@ impl VReg {
     pub const fn new(virt_reg: usize, class: RegClass) -> Self {
         debug_assert!(virt_reg <= VReg::MAX);
         VReg {
-            bits: ((virt_reg as u32) << 2) | (class as u8 as u32),
+            bits: ((virt_reg as u32) << RegClass::BITS) | (class as u8 as u32),
         }
     }
 
     #[inline(always)]
     pub const fn vreg(self) -> usize {
-        let vreg = (self.bits >> 2) as usize;
+        let vreg = (self.bits >> RegClass::BITS) as usize;
         vreg
     }
 
